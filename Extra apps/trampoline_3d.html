@@ -1,0 +1,1144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>3D Trampoline Simulator with Heatmap</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0e0f13;
+        color: #e6e6e6;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+        z-index: 0; /* keep canvas behind UI */
+      }
+      #hud {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        background: rgba(0, 0, 0, 0.45);
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        line-height: 1.35;
+        user-select: none;
+        backdrop-filter: blur(4px);
+        box-shadow: 0 6px 16px rgba(0,0,0,.25);
+        z-index: 5;
+      }
+      #hud code {
+        padding: 2px 6px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 6px;
+      }
+      #legend {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-top: 6px;
+      }
+      #legendWrap { display: flex; flex-direction: column; gap: 4px; }
+      #legendCanvas {
+        width: 180px; /* CSS pixels; drawn at device pixel ratio */
+        height: 12px;
+        border-radius: 3px;
+        display: block;
+        outline: 1px solid rgba(255,255,255,0.12);
+        background: transparent;
+      }
+      #legendLabels { display: flex; justify-content: space-between; font-size: 10px; opacity: 0.75; }
+      #footer {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        font-size: 12px;
+        opacity: 0.7;
+        user-select: none;
+      }
+      a { color: #8ab4ff; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      /* Control panel */
+      #panel {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 320px;
+        background: rgba(0,0,0,0.55);
+        backdrop-filter: blur(6px);
+        box-shadow: -8px 0 20px rgba(0,0,0,0.35);
+        padding: 12px 12px 14px 12px;
+        overflow: auto;
+        color: #e6e6e6;
+        z-index: 10; /* ensure panel receives clicks */
+      }
+      #panel h3 {
+        margin: 6px 0 8px 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      #panel .section {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(255,255,255,0.08);
+      }
+      #panel .grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      }
+      #panel select, #panel input[type="text"], #panel input[type="number"], #panel button {
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.12);
+        color: #e6e6e6;
+        border-radius: 4px;
+        padding: 4px 6px;
+      }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .control {
+        display: grid;
+        grid-template-columns: 1fr 64px;
+        gap: 8px;
+        align-items: center;
+        margin: 8px 0;
+      }
+      .control label { font-size: 12px; opacity: 0.9; display: block; }
+      .control .row { display: flex; align-items: center; gap: 8px; }
+      .control input[type="range"] { width: 100%; }
+      .control input[type="number"] {
+        width: 64px;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.12);
+        color: #e6e6e6;
+        border-radius: 4px;
+        padding: 2px 6px;
+      }
+      .toggleRow { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+      .toggleRow input[type="checkbox"] { transform: scale(1.2); }
+      .small { font-size: 11px; opacity: 0.8; }
+      #resetBtn {
+        display: inline-block;
+        margin: 6px 0 10px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.18);
+        color: #e6e6e6;
+        cursor: pointer;
+      }
+      #resetBtn:hover { background: rgba(255,255,255,0.10); }
+      #curveCanvas {
+        width: 100%;
+        height: 120px;
+        display: block;
+        margin-top: 8px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud">
+      <div><strong>3D Trampoline Simulator</strong></div>
+      <div>• Click on the mat to apply a deformation.</div>
+      <div>• Drag to orbit, scroll to zoom.</div>
+      <div id="legend">
+        <span>Heat:</span>
+        <div id="legendWrap">
+          <canvas id="legendCanvas"></canvas>
+          <div id="legendLabels">
+            <span>low</span><span>high</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="footer">Heatmap = deformation intensity (blue → red)</div>
+
+      <div id="panel">
+        <h3>Simulation Controls</h3>
+        <div class="section" id="shapeSection">
+          <div class="row">
+            <label for="shapeSelect">Curvature Shape</label>
+            <select id="shapeSelect">
+              <option value="flat">Flat</option>
+              <option value="sphere">Spherical (quadratic)</option>
+              <option value="cylX">Cylindrical (X axis)</option>
+              <option value="cylY">Cylindrical (Y axis)</option>
+              <option value="spherocyl">Sphero-cylindrical</option>
+            </select>
+          </div>
+          <div class="row">
+            <label for="unitsSelect">Units</label>
+            <select id="unitsSelect">
+              <option value="radius">Radius (m)</option>
+              <option value="curvature">Curvature (1/m)</option>
+            </select>
+            <label><input type="checkbox" id="concaveChk" checked> Concave Down</label>
+            <label><input type="checkbox" id="additiveChk"> Additive</label>
+            <label><input type="checkbox" id="freezeChk"> Freeze</label>
+            <label><input type="checkbox" id="curveChk" checked> Show Curve</label>
+            <label><input type="checkbox" id="wireframeChk"> Wireframe</label>
+            <label><input type="checkbox" id="autoPreviewChk" checked> Auto Preview</label>
+          </div>
+          <div class="grid">
+            <label for="sphereR">Sphere R</label>
+            <input id="sphereR" type="number" step="0.01" value="6">
+            <label for="cylR">Cylinder R</label>
+            <input id="cylR" type="number" step="0.01" value="6">
+            <label for="rxInput">Rx (spherocyl)</label>
+            <input id="rxInput" type="number" step="0.01" value="8">
+            <label for="ryInput">Ry (spherocyl)</label>
+            <input id="ryInput" type="number" step="0.01" value="6">
+            <label for="angleDeg">Axis Angle (deg)</label>
+            <input id="angleDeg" type="number" step="1" value="0">
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <label for="curveAxis">Curve Axis</label>
+            <select id="curveAxis">
+              <option value="X">X</option>
+              <option value="Y">Y</option>
+              <option value="Angle">Angle</option>
+            </select>
+            <button id="applyShapeBtn" type="button">Apply Shape</button>
+            <button id="updateCurveBtn" type="button">Update Curve</button>
+          </div>
+          <canvas id="curveCanvas"></canvas>
+        </div>
+        <div class="section">
+          <button id="resetBtn" type="button">Reset Parameters</button>
+        </div>
+        <div id="controls"></div>
+        <div class="small">Tip: drag the sliders or type exact values.</div>
+      </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+      }
+    </script>
+    <script type="module">
+      import * as THREE from 'three';
+      import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+      // Basic setup
+      const app = document.getElementById('app');
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      app.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0e0f13);
+
+      const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.05, 200);
+      camera.position.set(4.5, 4.0, 4.5);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 0, 0);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.minDistance = 2;
+      controls.maxDistance = 18;
+      controls.maxPolarAngle = Math.PI * 0.49;
+
+      // Lighting
+      const hemi = new THREE.HemisphereLight(0xbcd6ff, 0x2b2b30, 0.9);
+      hemi.position.set(0, 1, 0);
+      scene.add(hemi);
+      const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+      dir.position.set(5, 6, 3);
+      dir.castShadow = false;
+      scene.add(dir);
+
+      // Ground
+      const groundGeo = new THREE.CircleGeometry(30, 64);
+      const groundMat = new THREE.MeshStandardMaterial({ color: 0x111317, metalness: 0.0, roughness: 1.0 });
+      const ground = new THREE.Mesh(groundGeo, groundMat);
+      // Ground lies in XY plane; move it down along Z (vertical)
+      ground.position.z = -1.25;
+      scene.add(ground);
+
+      // Trampoline parameters
+      const R = 2.0;               // trampoline radius (meters)
+      const segments = 192;        // grid resolution per axis (higher -> smoother)
+      const width = R * 2;
+      const height = R * 2;
+      const h = width / segments;  // grid spacing
+
+      // Cloth state arrays
+      const W = segments, H = segments; // segments per axis
+      const VX = W + 1, VY = H + 1;     // vertices per axis
+      const VCOUNT = VX * VY;
+      const y = new Float32Array(VCOUNT);     // dynamic displacement u (relative to rest shape)
+      const v = new Float32Array(VCOUNT);     // velocity du/dt
+      const yRest = new Float32Array(VCOUNT); // rest shape (baseline sag)
+      const isInside = new Uint8Array(VCOUNT);// 1 if inside disc
+      const isFixed = new Uint8Array(VCOUNT); // 1 if boundary clamped
+      const heat = new Float32Array(VCOUNT);  // heat metric for color
+      const curv = new Float32Array(VCOUNT);  // curvature/roughness metric
+
+      function idx(i, j) { return j * VX + i; }
+
+      // Geometry: start from XY plane and use Z as vertical displacement
+      const clothGeo = new THREE.PlaneGeometry(width, height, W, H);
+      // Remap to center at (0,0), in XY
+      clothGeo.rotateZ(0);
+
+      // Identify vertices inside circle, clamp boundary, and snap edge to exact rim
+      const pos = clothGeo.attributes.position;
+      for (let j = 0; j < VY; j++) {
+        for (let i = 0; i < VX; i++) {
+          const id = idx(i, j);
+          let x = -R + (i / W) * (2 * R);
+          let yPos = -R + (j / H) * (2 * R);
+          const r2 = x * x + yPos * yPos;
+          const inside = r2 <= R * R + 1e-6; // small tolerance
+          isInside[id] = inside ? 1 : 0;
+          // Strongly clamp a full, uniform ring (about half a cell wide) to the frame
+          const r = Math.sqrt(r2);
+          if (inside && r >= (R - h * 0.5)) {
+            isFixed[id] = 1;
+            // Snap XY onto the exact circular rim for a perfect visual join
+            const phi = Math.atan2(yPos, x) || 0;
+            x = R * Math.cos(phi);
+            yPos = R * Math.sin(phi);
+          }
+          // Assign exact XY to geometry (Z stays 0)
+          pos.setX(id, x);
+          pos.setY(id, yPos);
+          pos.setZ(id, 0);
+        }
+      }
+
+      // Filter indices to keep triangles fully inside the circle
+      const origIndex = clothGeo.index.array;
+      const newIndex = [];
+      for (let t = 0; t < origIndex.length; t += 3) {
+        const a = origIndex[t], b = origIndex[t + 1], c = origIndex[t + 2];
+        if (isInside[a] & isInside[b] & isInside[c]) {
+          newIndex.push(a, b, c);
+        }
+      }
+      clothGeo.setIndex(newIndex);
+
+      // Vertex colors for heatmap
+      const colors = new Float32Array(VCOUNT * 3);
+      clothGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+      const clothMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        metalness: 0.0,
+        roughness: 0.9,
+        vertexColors: true,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
+      });
+      const cloth = new THREE.Mesh(clothGeo, clothMat);
+      cloth.receiveShadow = false;
+      cloth.castShadow = false;
+      scene.add(cloth);
+
+      // Trampoline metal frame (ring)
+      const frameTube = 0.06;
+      const frame = new THREE.Mesh(
+        // Set major radius so the inner surface sits right at r = R
+        new THREE.TorusGeometry(R + frameTube, frameTube, 24, 128),
+        new THREE.MeshStandardMaterial({ color: 0x8a929e, metalness: 0.8, roughness: 0.3 })
+      );
+      // Torus by default lies in XY plane; no rotation needed
+      scene.add(frame);
+
+      // Visual rim cap to fill any seam between mat and frame
+      const rimWidth = Math.max(0.004, h * 0.5);
+      const rimCap = new THREE.Mesh(
+        new THREE.RingGeometry(R - rimWidth, R, 384),
+        new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          metalness: 0.0,
+          roughness: 0.95,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.98,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2,
+        })
+      );
+      // Ring lies in XY plane at z=0 — matches frame inner edge
+      scene.add(rimCap);
+
+      // (Legs removed by request)
+
+      // Cloth state (sleeping used to freeze the surface when calm)
+      const clothState = { sleeping: false, sleepAcc: 0 };
+
+      // Physics parameters (cloth only)
+      let waveC = 6.0;            // wave propagation speed
+      let damping = 3.0;          // cloth velocity damping
+      let massPerVertex = 0.08;   // effective mass for cloth response
+      let impulseRadius = 0.225;  // click impulse radius (meters)
+      let maxClothVel = 8.0;      // clamp to avoid numerical spikes
+      let clickImpulse = 60.0;    // click impulse strength
+
+      // Defaults for reset
+      const defaults = {
+        waveC: 6.0,
+        damping: 3.0,
+        massPerVertex: 0.08,
+        maxClothVel: 8.0,
+        clickImpulse: 60.0,
+        clothSleepAvgVelThresh: 0.003,
+        clothSleepMaxVelThresh: 0.02,
+        clothSleepTime: 0.8,
+        heatScaleDisp: 2.0,
+        heatScaleVel: 0.12,
+        heatScaleCurv: 0.10,
+        heatDecay: 0.98,
+        maxDispForHeat: 0.35,
+        heatGamma: 1.0,
+        cflNumber: 0.5,
+        impulseRadius: 0.225,
+      };
+      // Cloth sleep tuning (no ball)
+      // Cloth sleep tuning
+      let clothSleepAvgVelThresh = 0.003; // average |v|
+      let clothSleepMaxVelThresh = 0.02;  // max |v|
+      let clothSleepTime = 0.8;           // seconds near rest before sleeping
+
+      // Heatmap parameters
+      let heatScaleDisp = 2.0;       // displacement contribution
+      let heatScaleVel = 0.12;       // velocity contribution
+      let heatScaleCurv = 0.10;      // curvature contribution
+      let heatDecay = 0.98;          // decay per frame
+      let maxDispForHeat = 0.35;     // maps displacement to 0..1
+      let heatGamma = 1.0;           // color mapping gamma
+
+      // Helpers: continuous heatmap color. Use a smooth blue->cyan->green->yellow->red ramp via HSL.
+      function turboColor(t) {
+        t = Math.min(1, Math.max(0, t));
+        const h = (0.66 - 0.66 * t); // hue: 0.66 (blue) -> 0 (red)
+        const s = 1.0;
+        const l = 0.5 + 0.1 * (1 - Math.abs(0.5 - t) * 2); // slightly brighter mid-tones
+        // Convert HSL to RGB
+        function hue2rgb(p, q, tt) {
+          if (tt < 0) tt += 1; if (tt > 1) tt -= 1;
+          if (tt < 1/6) return p + (q - p) * 6 * tt;
+          if (tt < 1/2) return q;
+          if (tt < 2/3) return p + (q - p) * (2/3 - tt) * 6;
+          return p;
+        }
+        let r, g, b;
+        if (s === 0) { r = g = b = l; }
+        else {
+          const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+          const p = 2 * l - q;
+          r = hue2rgb(p, q, h + 1/3);
+          g = hue2rgb(p, q, h);
+          b = hue2rgb(p, q, h - 1/3);
+        }
+        return [r, g, b];
+      }
+
+      function drawLegend() {
+        const canvas = document.getElementById('legendCanvas');
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const wCss = Math.max(1, canvas.clientWidth);
+        const hCss = Math.max(1, canvas.clientHeight);
+        const w = Math.round(wCss * dpr);
+        const h = Math.round(hCss * dpr);
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w; canvas.height = h;
+        }
+        const img = ctx.createImageData(w, h);
+        for (let x = 0; x < w; x++) {
+          const t = x / (w - 1);
+          const [cr, cg, cb] = turboColor(Math.pow(t, heatGamma));
+          const R = Math.round(cr * 255), G = Math.round(cg * 255), B = Math.round(cb * 255);
+          for (let y = 0; y < h; y++) {
+            const id = (y * w + x) * 4;
+            img.data[id] = R;
+            img.data[id + 1] = G;
+            img.data[id + 2] = B;
+            img.data[id + 3] = 255;
+          }
+        }
+        ctx.putImageData(img, 0, 0);
+      }
+
+      // Curvature shape application
+      function getNumber(id, fallback) {
+        const el = document.getElementById(id);
+        const v = parseFloat(el && el.value);
+        return Number.isFinite(v) ? v : fallback;
+      }
+      function getShapeParams() {
+        const shape = document.getElementById('shapeSelect').value;
+        const units = document.getElementById('unitsSelect').value; // 'radius' | 'curvature'
+        const concave = document.getElementById('concaveChk').checked;
+        const additive = document.getElementById('additiveChk').checked;
+        const freeze = document.getElementById('freezeChk').checked;
+        const sphereRin = getNumber('sphereR', 6.0);
+        const cylRin = getNumber('cylR', 6.0);
+        const RxIn = getNumber('rxInput', 8.0);
+        const RyIn = getNumber('ryInput', 6.0);
+        const angleRad = getNumber('angleDeg', 0.0) * Math.PI / 180;
+        function fromUnits(val) {
+          if (units === 'curvature') {
+            const k = Math.max(1e-6, Math.abs(val));
+            return 1 / k;
+          }
+          return Math.max(1e-6, Math.abs(val));
+        }
+        const params = {
+          shape,
+          sgn: concave ? -1 : 1,
+          sphereR: fromUnits(sphereRin),
+          cylR: fromUnits(cylRin),
+          Rx: fromUnits(RxIn),
+          Ry: fromUnits(RyIn),
+          angleRad,
+          additive,
+          freeze,
+        };
+        // Compute average rim offset so the boundary aligns to z=0
+        params.rimOffset = computeRimOffset(params);
+        return params;
+      }
+      function computeRimOffset(params) {
+        let sum = 0, count = 0;
+        const cosA = Math.cos(params.angleRad), sinA = Math.sin(params.angleRad);
+        for (let j = 0; j < VY; j++) {
+          for (let i = 0; i < VX; i++) {
+            const id = idx(i, j);
+            if (!isFixed[id]) continue;
+            const x = pos.getX(id);
+            const y = pos.getY(id);
+            // sag without offset
+            let sag = 0;
+            switch (params.shape) {
+              case 'sphere': sag = (x * x + y * y) / (2 * params.sphereR); break;
+              case 'cylX': sag = (y * y) / (2 * params.cylR); break;
+              case 'cylY': sag = (x * x) / (2 * params.cylR); break;
+              case 'spherocyl': {
+                const xr =  x * cosA + y * sinA;
+                const yr = -x * sinA + y * cosA;
+                sag = (xr * xr) / (2 * params.Rx) + (yr * yr) / (2 * params.Ry);
+                break;
+              }
+              case 'flat': default: sag = 0; break;
+            }
+            const z = params.sgn * sag;
+            sum += z; count++;
+          }
+        }
+        return count > 0 ? (sum / count) : 0;
+      }
+      function sagAt(x, y, params) {
+        const { shape, sgn, sphereR, cylR, Rx, Ry, angleRad } = params;
+        const cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
+        let sag = 0;
+        switch (shape) {
+          case 'sphere': sag = (x * x + y * y) / (2 * sphereR); break;
+          case 'cylX': sag = (y * y) / (2 * cylR); break;
+          case 'cylY': sag = (x * x) / (2 * cylR); break;
+          case 'spherocyl': {
+            const xr =  x * cosA + y * sinA;
+            const yr = -x * sinA + y * cosA;
+            sag = (xr * xr) / (2 * Rx) + (yr * yr) / (2 * Ry);
+            break;
+          }
+          case 'flat': default: sag = 0; break;
+        }
+        return sgn * sag;
+      }
+      let curveLine = null;
+      function updateCurveLine() {
+        const show = document.getElementById('curveChk')?.checked;
+        if (!show) {
+          if (curveLine) curveLine.visible = false;
+          return;
+        }
+        const params = getShapeParams();
+        const axisSel = document.getElementById('curveAxis')?.value || 'X';
+        let angle = 0;
+        if (axisSel === 'Y') angle = Math.PI / 2;
+        if (axisSel === 'Angle') angle = params.angleRad;
+        const ux = Math.cos(angle), uy = Math.sin(angle);
+        const samples = 256;
+        const positions = new Float32Array(samples * 3);
+        let idx3 = 0;
+        for (let s = 0; s < samples; s++) {
+          const t = (s / (samples - 1)) * 2 * R - R; // -R..R
+          let x = ux * t;
+          let y = uy * t;
+          const r = Math.hypot(x, y);
+          if (r > R) {
+            // clamp to rim
+            x *= R / r; y *= R / r;
+          }
+          const z = sagAt(x, y, params) - params.rimOffset;
+          positions[idx3++] = x;
+          positions[idx3++] = y;
+          positions[idx3++] = z;
+        }
+        if (!curveLine) {
+          const geom = new THREE.BufferGeometry();
+          geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          const mat = new THREE.LineBasicMaterial({ color: 0x00f0ff });
+          curveLine = new THREE.Line(geom, mat);
+          scene.add(curveLine);
+        } else {
+          curveLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          curveLine.geometry.attributes.position.needsUpdate = true;
+        }
+        curveLine.visible = true;
+      }
+      function drawCurvePreview() {
+        const canvas = document.getElementById('curveCanvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const wCss = Math.max(1, canvas.clientWidth);
+        const hCss = Math.max(1, canvas.clientHeight);
+        const w = Math.round(wCss * dpr);
+        const h = Math.round(hCss * dpr);
+        if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+        ctx.clearRect(0, 0, w, h);
+        // axes
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = Math.max(1, dpr * 1);
+        ctx.beginPath();
+        ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2);
+        ctx.stroke();
+        const params = getShapeParams();
+        const axisSel = document.getElementById('curveAxis')?.value || 'X';
+        let angle = 0;
+        if (axisSel === 'Y') angle = Math.PI / 2;
+        if (axisSel === 'Angle') angle = params.angleRad;
+        const ux = Math.cos(angle), uy = Math.sin(angle);
+        // sample
+        const N = 256;
+        const xs = new Array(N);
+        const zs = new Array(N);
+        let zmin = 0, zmax = 0;
+        for (let i = 0; i < N; i++) {
+          const t = (i / (N - 1)) * 2 * R - R;
+          let x = ux * t, y = uy * t;
+          const r = Math.hypot(x, y);
+          if (r > R) { x *= R / r; y *= R / r; }
+          const z = sagAt(x, y, params) - params.rimOffset;
+          xs[i] = t; zs[i] = z;
+          if (i === 0) { zmin = zmax = z; } else { if (z < zmin) zmin = z; if (z > zmax) zmax = z; }
+        }
+        const pad = 0.1; // 10% padding
+        const zSpan = Math.max(1e-6, zmax - zmin);
+        ctx.strokeStyle = '#00f0ff';
+        ctx.beginPath();
+        for (let i = 0; i < N; i++) {
+          const nx = (xs[i] + R) / (2 * R);
+          const ny = 1 - ((zs[i] - zmin) / zSpan) * (1 - 2 * pad) - pad;
+          const px = nx * w, py = ny * h;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        // Mark rim
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        const rimX = (R + R) / (2 * R) * w; // right edge
+        ctx.moveTo(0, 0); ctx.lineTo(0, h);
+        ctx.moveTo(w, 0); ctx.lineTo(w, h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Adapt rim cap thickness to hide the cloth grid edge under steep curves
+      function computeRimWidthFromShape(params) {
+        const base = Math.max(0.75 * h, 0.006);
+        switch (params.shape) {
+          case 'sphere':
+            return base * 1.3; // uniformly steep near rim
+          case 'cylX':
+          case 'cylY':
+            return base * 1.8; // anisotropic slope; give extra coverage
+          case 'spherocyl':
+            return base * 1.6; // between sphere and cylinder
+          default:
+            return base;
+        }
+      }
+      function updateRimVisuals(params) {
+        if (!rimCap) return;
+        const width = computeRimWidthFromShape(params);
+        const inner = Math.max(0.0, R - width);
+        const newGeom = new THREE.RingGeometry(inner, R, 384);
+        rimCap.geometry.dispose();
+        rimCap.geometry = newGeom;
+      }
+      function updateCurveVisuals() {
+        updateCurveLine();
+        drawCurvePreview();
+        // Also adapt rim thickness based on current shape for better edge cover
+        const params = getShapeParams();
+        updateRimVisuals(params);
+      }
+      function applyShapeToCloth() {
+        const { shape, sgn, sphereR, cylR, Rx, Ry, angleRad, additive, freeze, rimOffset } = getShapeParams();
+        const cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
+
+        // Apply across grid
+        for (let j = 0; j < VY; j++) {
+          for (let i = 0; i < VX; i++) {
+            const id = idx(i, j);
+            if (!isInside[id]) continue;
+            // Keep rim pinned
+            if (isFixed[id]) { y[id] = 0; v[id] = 0; continue; }
+            const x = pos.getX(id);
+            const yy = pos.getY(id);
+            let sag = 0;
+            switch (shape) {
+              case 'sphere': {
+                const r2 = x * x + yy * yy;
+                sag = r2 / (2 * sphereR);
+                break;
+              }
+              case 'cylX': { // axis along X; curvature along Y
+                sag = (yy * yy) / (2 * cylR);
+                break;
+              }
+              case 'cylY': { // axis along Y; curvature along X
+                sag = (x * x) / (2 * cylR);
+                break;
+              }
+              case 'spherocyl': {
+                const xr =  x * cosA + yy * sinA;
+                const yr = -x * sinA + yy * cosA;
+                sag = (xr * xr) / (2 * Rx) + (yr * yr) / (2 * Ry);
+                break;
+              }
+              case 'flat':
+              default:
+                sag = 0;
+                break;
+            }
+            const zNew = sgn * sag - rimOffset;
+            if (additive) yRest[id] += zNew; else yRest[id] = zNew;
+            // reset dynamic displacement/velocities on apply
+            y[id] = 0; v[id] = 0;
+          }
+        }
+        // Push into geometry immediately
+        for (let j = 0; j < VY; j++) {
+          for (let i = 0; i < VX; i++) {
+            const id = idx(i, j);
+            pos.setZ(id, isInside[id] ? (yRest[id] + y[id]) : 0);
+          }
+        }
+        pos.needsUpdate = true;
+        clothGeo.attributes.color.needsUpdate = true;
+
+        // Optionally freeze
+        if (freeze) {
+          clothState.sleeping = true;
+          clothState.sleepAcc = 0;
+          for (let id = 0; id < VCOUNT; id++) if (isInside[id]) v[id] = 0; // zero velocities
+        } else {
+          clothState.sleeping = false;
+          clothState.sleepAcc = 0;
+        }
+        // Enforce exact rim alignment to frame
+        for (let j = 0; j < VY; j++) {
+          for (let i = 0; i < VX; i++) {
+            const id = idx(i, j);
+            if (!isFixed[id]) continue;
+            yRest[id] = 0; y[id] = 0; v[id] = 0; pos.setZ(id, 0);
+          }
+        }
+      }
+
+      // Bilinear samples for height and velocity fields
+      function sampleFieldAt(x, yWorld, arr) {
+        // world x,y in [-R,R]
+        const u = (x + R) / (2 * R) * W; // 0..W
+        const vCoord = (yWorld + R) / (2 * R) * H; // 0..H
+        const i0 = Math.floor(u);
+        const j0 = Math.floor(vCoord);
+        const i1 = Math.min(W, i0 + 1), j1 = Math.min(H, j0 + 1);
+        const su = u - i0;
+        const sv = vCoord - j0;
+        const a = idx(i0, j0), b = idx(i1, j0), c = idx(i0, j1), d = idx(i1, j1);
+        const A = arr[a] || 0, B = arr[b] || 0, C = arr[c] || 0, D = arr[d] || 0;
+        const ab = A * (1 - su) + B * su;
+        const cd = C * (1 - su) + D * su;
+        return ab * (1 - sv) + cd * sv;
+      }
+
+      // Apply a distributed force impulse around (x,y)
+      function applyImpulse(x, yWorld, impulse /* positive is upward */) {
+        const rad2 = impulseRadius * impulseRadius;
+        // Visit nearby vertices in a bounding box
+        const iMin = Math.max(0, Math.floor(((x - impulseRadius) + R) / (2 * R) * W));
+        const iMax = Math.min(W, Math.ceil(((x + impulseRadius) + R) / (2 * R) * W));
+        const jMin = Math.max(0, Math.floor(((yWorld - impulseRadius) + R) / (2 * R) * H));
+        const jMax = Math.min(H, Math.ceil(((yWorld + impulseRadius) + R) / (2 * R) * H));
+        for (let j = jMin; j <= jMax; j++) {
+          for (let i = iMin; i <= iMax; i++) {
+            const id = idx(i, j);
+            if (!isInside[id]) continue;
+            const vx = -R + (i / W) * (2 * R);
+            const vy = -R + (j / H) * (2 * R);
+            const dx = vx - x, dy = vy - yWorld;
+            const r2 = dx * dx + dy * dy;
+            if (r2 > rad2) continue;
+            const w = Math.exp(-r2 / (2 * impulseRadius * impulseRadius));
+            v[id] += (impulse * w) / massPerVertex; // dv = a*dt already baked in when caller uses impulse = F*dt
+          }
+        }
+      }
+
+      // Gradient of the height field (for normals/analysis)
+      function heightGradientAt(x, yWorld) {
+        const eps = h;
+        const h0 = sampleFieldAt(x, yWorld, y);
+        const hx = (sampleFieldAt(x + eps, yWorld, y) - sampleFieldAt(x - eps, yWorld, y)) / (2 * eps);
+        const hy = (sampleFieldAt(x, yWorld + eps, y) - sampleFieldAt(x, yWorld - eps, y)) / (2 * eps);
+        return { h0, hx, hy };
+      }
+
+      // Simulation step
+      let lastTime = performance.now();
+      let cflNumber = 0.5; // Courant number for stability (tunable)
+      let lastDtRef = 1 / 60; // for click impulse scaling
+      function step() {
+        const now = performance.now();
+        let dt = Math.min(1 / 60, (now - lastTime) / 1000);
+        lastTime = now;
+        // CFL-based adaptive substepping for the cloth wave integration
+        const dtMax = (cflNumber * h) / (waveC * Math.SQRT2);
+        const steps = Math.max(1, Math.ceil(dt / dtMax));
+        const dtSub = dt / steps;
+        for (let s = 0; s < steps; s++) simulate(dtSub);
+        lastDtRef = dtSub;
+
+        // Update geometry positions and colors
+        for (let j = 0; j < VY; j++) {
+          for (let i = 0; i < VX; i++) {
+            const id = idx(i, j);
+            const zNow = yRest[id] + y[id];
+            pos.setZ(id, zNow);
+
+            // Heat accumulation based on displacement, velocity and curvature; decay
+            const tDisp = Math.min(1, Math.abs(y[id]) / maxDispForHeat);
+            const tVel = Math.min(1, Math.abs(v[id]) * heatScaleVel);
+            const tCurv = Math.min(1, curv[id] * heatScaleCurv);
+            const t = Math.max(heat[id] * heatDecay, Math.min(1, tDisp * heatScaleDisp + tVel + tCurv));
+            heat[id] = t;
+            const [cr, cg, cb] = turboColor(Math.pow(t, heatGamma));
+            const cIdx = id * 3;
+            colors[cIdx + 0] = cr;
+            colors[cIdx + 1] = cg;
+            colors[cIdx + 2] = cb;
+          }
+        }
+        pos.needsUpdate = true;
+        clothGeo.attributes.color.needsUpdate = true;
+
+        controls.update();
+        renderer.render(scene, camera);
+        requestAnimationFrame(step);
+      }
+
+      function simulate(dt) {
+        // Cloth dynamics (skip if sleeping)
+        if (clothState.sleeping) return;
+
+        // Cloth wave equation integration on dynamic displacement u = y (rest shape in yRest)
+        const c2 = (waveC * waveC);
+        const invH2 = 1.0 / (h * h);
+        let sumAbsVel = 0, maxAbsVel = 0, countInside = 0;
+        for (let j = 0; j < VY; j++) {
+          for (let i = 0; i < VX; i++) {
+            const id = idx(i, j);
+            if (!isInside[id]) continue;
+            if (isFixed[id]) {
+              y[id] = 0; v[id] = 0; curv[id] = 0; continue; // rim delta stays zero
+            }
+            // 9-point Laplacian (boundary treated as 0) for better isotropy (on delta y)
+            const uC = y[id];
+            const uL = (i > 0 && isInside[idx(i - 1, j)]) ? y[idx(i - 1, j)] : 0;
+            const uR = (i < VX - 1 && isInside[idx(i + 1, j)]) ? y[idx(i + 1, j)] : 0;
+            const uD = (j > 0 && isInside[idx(i, j - 1)]) ? y[idx(i, j - 1)] : 0;
+            const uU = (j < VY - 1 && isInside[idx(i, j + 1)]) ? y[idx(i, j + 1)] : 0;
+            const uUL = (i > 0 && j < VY - 1 && isInside[idx(i - 1, j + 1)]) ? y[idx(i - 1, j + 1)] : 0;
+            const uUR = (i < VX - 1 && j < VY - 1 && isInside[idx(i + 1, j + 1)]) ? y[idx(i + 1, j + 1)] : 0;
+            const uDL = (i > 0 && j > 0 && isInside[idx(i - 1, j - 1)]) ? y[idx(i - 1, j - 1)] : 0;
+            const uDR = (i < VX - 1 && j > 0 && isInside[idx(i + 1, j - 1)]) ? y[idx(i + 1, j - 1)] : 0;
+            const lap = (4 * (uL + uR + uU + uD) + (uUL + uUR + uDL + uDR) - 20 * uC) * (1.0 / (6.0 * h * h));
+            // v' = c^2 * lap - damping * v
+            v[id] += (c2 * lap - damping * v[id]) * dt;
+            curv[id] = Math.abs(lap);
+
+            const av = Math.abs(v[id]);
+            sumAbsVel += av;
+            if (av > maxAbsVel) maxAbsVel = av;
+            countInside++;
+          }
+        }
+
+        // Clamp extreme velocities to improve robustness
+        for (let id = 0; id < VCOUNT; id++) {
+          if (!isInside[id] || isFixed[id]) continue;
+          const vel = v[id];
+          if (vel > maxClothVel) v[id] = maxClothVel;
+          else if (vel < -maxClothVel) v[id] = -maxClothVel;
+        }
+
+        // Integrate displacements
+        for (let id = 0; id < VCOUNT; id++) {
+          if (!isInside[id] || isFixed[id]) continue;
+          y[id] += v[id] * dt;
+        }
+
+        // Cloth sleep detection (waves negligible => freeze surface)
+        if (countInside > 0) {
+          const avgAbsVel = sumAbsVel / countInside;
+          if (avgAbsVel < clothSleepAvgVelThresh && maxAbsVel < clothSleepMaxVelThresh) {
+            clothState.sleepAcc += dt;
+            if (clothState.sleepAcc > clothSleepTime) {
+              clothState.sleeping = true;
+              clothState.sleepAcc = 0;
+              // Zero all velocities to freeze the surface
+              for (let id = 0; id < VCOUNT; id++) if (isInside[id]) v[id] = 0;
+            }
+          } else {
+            clothState.sleepAcc = 0;
+          }
+        }
+      }
+
+      // Pointer interaction: click to deform mat
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      function onPointerDown(ev) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        // Intersect with the trampoline plane (z ~ 0 via XY plane)
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const hit = new THREE.Vector3();
+        const ok = raycaster.ray.intersectPlane(plane, hit);
+        if (!ok) return;
+        const x = hit.x, yWorld = hit.y;
+        if ((x * x + yWorld * yWorld) <= R * R) {
+          // Just deform the mat at the clicked spot
+          clothState.sleeping = false;
+          clothState.sleepAcc = 0;
+          applyImpulse(x, yWorld, -clickImpulse * lastDtRef);
+        }
+      }
+      renderer.domElement.addEventListener('pointerdown', onPointerDown);
+
+      // UI: Sliders
+      const controlsRoot = document.getElementById('controls');
+      function addSlider(root, { label, min, max, step, get, set }) {
+        const wrap = document.createElement('div');
+        wrap.className = 'control';
+        const left = document.createElement('div');
+        const right = document.createElement('div');
+        const lab = document.createElement('label');
+        lab.textContent = label;
+        const row = document.createElement('div');
+        row.className = 'row';
+        const range = document.createElement('input');
+        range.type = 'range';
+        range.min = String(min);
+        range.max = String(max);
+        range.step = String(step);
+        const num = document.createElement('input');
+        num.type = 'number';
+        num.min = String(min);
+        num.max = String(max);
+        num.step = String(step);
+        function syncFromValue(v) {
+          range.value = String(v);
+          num.value = Number(v).toFixed(Math.max(0, (String(step).split('.')[1] || '').length));
+        }
+        function apply(v) { set(v); syncFromValue(v); drawLegend(); }
+        syncFromValue(get());
+        range.addEventListener('input', () => apply(parseFloat(range.value)));
+        num.addEventListener('input', () => {
+          const v = parseFloat(num.value);
+          if (!Number.isNaN(v)) apply(Math.min(max, Math.max(min, v)));
+        });
+        row.appendChild(range);
+        left.appendChild(lab);
+        left.appendChild(row);
+        right.appendChild(num);
+        wrap.appendChild(left);
+        wrap.appendChild(right);
+        root.appendChild(wrap);
+      }
+      function buildControls() {
+        if (!controlsRoot) return;
+        controlsRoot.innerHTML = '';
+        // Parameters (cloth + heatmap)
+        addSlider(controlsRoot, { label: 'Wave Speed', min: 1, max: 40, step: 0.1, get: () => waveC, set: v => waveC = v });
+        addSlider(controlsRoot, { label: 'Cloth Damping', min: 0, max: 10, step: 0.05, get: () => damping, set: v => damping = v });
+        addSlider(controlsRoot, { label: 'Mass per Vertex', min: 0.02, max: 0.3, step: 0.005, get: () => massPerVertex, set: v => massPerVertex = v });
+        addSlider(controlsRoot, { label: 'Max Cloth Velocity', min: 1, max: 30, step: 0.5, get: () => maxClothVel, set: v => maxClothVel = v });
+        addSlider(controlsRoot, { label: 'Impulse Radius', min: 0.05, max: 0.6, step: 0.01, get: () => impulseRadius, set: v => impulseRadius = v });
+        addSlider(controlsRoot, { label: 'Heat Scale (Disp)', min: 0, max: 5, step: 0.05, get: () => heatScaleDisp, set: v => heatScaleDisp = v });
+        addSlider(controlsRoot, { label: 'Heat Scale (Vel)', min: 0, max: 1, step: 0.01, get: () => heatScaleVel, set: v => heatScaleVel = v });
+        addSlider(controlsRoot, { label: 'Heat Scale (Curv)', min: 0, max: 1, step: 0.01, get: () => heatScaleCurv, set: v => heatScaleCurv = v });
+        addSlider(controlsRoot, { label: 'Heat Decay', min: 0.9, max: 1.0, step: 0.001, get: () => heatDecay, set: v => heatDecay = v });
+        addSlider(controlsRoot, { label: 'Max Disp for Heat', min: 0.05, max: 1.0, step: 0.01, get: () => maxDispForHeat, set: v => maxDispForHeat = v });
+        addSlider(controlsRoot, { label: 'Heat Gamma', min: 0.5, max: 2.0, step: 0.01, get: () => heatGamma, set: v => heatGamma = v });
+        addSlider(controlsRoot, { label: 'Cloth Sleep AvgVel', min: 0.0005, max: 0.02, step: 0.0005, get: () => clothSleepAvgVelThresh, set: v => clothSleepAvgVelThresh = v });
+        addSlider(controlsRoot, { label: 'Cloth Sleep MaxVel', min: 0.001, max: 0.1, step: 0.001, get: () => clothSleepMaxVelThresh, set: v => clothSleepMaxVelThresh = v });
+        addSlider(controlsRoot, { label: 'Cloth Sleep Time', min: 0.1, max: 3.0, step: 0.05, get: () => clothSleepTime, set: v => clothSleepTime = v });
+        addSlider(controlsRoot, { label: 'Click Impulse', min: 5, max: 200, step: 1, get: () => clickImpulse, set: v => clickImpulse = v });
+      }
+      buildControls();
+
+      // Reset button
+      const resetBtn = document.getElementById('resetBtn');
+      function resetParameters() {
+        // Restore defaults
+        waveC = defaults.waveC;
+        damping = defaults.damping;
+        massPerVertex = defaults.massPerVertex;
+        maxClothVel = defaults.maxClothVel;
+        clickImpulse = defaults.clickImpulse;
+        clothSleepAvgVelThresh = defaults.clothSleepAvgVelThresh;
+        clothSleepMaxVelThresh = defaults.clothSleepMaxVelThresh;
+        clothSleepTime = defaults.clothSleepTime;
+        heatScaleDisp = defaults.heatScaleDisp;
+        heatScaleVel = defaults.heatScaleVel;
+        heatScaleCurv = defaults.heatScaleCurv;
+        heatDecay = defaults.heatDecay;
+        maxDispForHeat = defaults.maxDispForHeat;
+        heatGamma = defaults.heatGamma;
+        cflNumber = defaults.cflNumber;
+
+        // Cloth state and impulse radius
+        impulseRadius = defaults.impulseRadius;
+        clothState.sleeping = false;
+        clothState.sleepAcc = 0;
+
+        // Reset cloth fields (keep rest shape yRest; reset dynamic u to 0)
+        for (let id = 0; id < VCOUNT; id++) {
+          y[id] = 0; v[id] = 0; heat[id] = 0; if (typeof curv !== 'undefined') curv[id] = 0;
+          pos.setZ(id, yRest[id]);
+        }
+        pos.needsUpdate = true;
+        clothGeo.attributes.color.needsUpdate = true;
+
+        // Rebuild sliders to reflect defaults
+        buildControls();
+        drawLegend();
+        lastTime = performance.now();
+        // Reset shape UI
+        if (shapeSelect) shapeSelect.value = 'flat';
+        if (unitsSelect) unitsSelect.value = 'radius';
+        if (concaveChk) concaveChk.checked = true;
+        if (additiveChk) additiveChk.checked = false;
+        if (freezeChk) freezeChk.checked = false;
+        if (curveChk) curveChk.checked = true;
+        if (wireframeChk) wireframeChk.checked = false, clothMat.wireframe = false;
+        if (autoPreviewChk) autoPreviewChk.checked = true;
+        if (sphereRInput) sphereRInput.value = '6';
+        if (cylRInput) cylRInput.value = '6';
+        if (rxInput) rxInput.value = '8';
+        if (ryInput) ryInput.value = '6';
+        if (angleDegInput) angleDegInput.value = '0';
+        if (shapeSelect) updateShapeInputsVisibility();
+        updateCurveVisuals();
+        // Keep surface stationary at rest after reset
+        clothState.sleeping = true;
+        clothState.sleepAcc = 0;
+      }
+      if (resetBtn) resetBtn.addEventListener('click', resetParameters);
+
+      // Shape UI wiring
+      const shapeSelect = document.getElementById('shapeSelect');
+      const unitsSelect = document.getElementById('unitsSelect');
+      const concaveChk = document.getElementById('concaveChk');
+      const additiveChk = document.getElementById('additiveChk');
+      const freezeChk = document.getElementById('freezeChk');
+      const curveChk = document.getElementById('curveChk');
+      const wireframeChk = document.getElementById('wireframeChk');
+      const autoPreviewChk = document.getElementById('autoPreviewChk');
+      const sphereRInput = document.getElementById('sphereR');
+      const cylRInput = document.getElementById('cylR');
+      const rxInput = document.getElementById('rxInput');
+      const ryInput = document.getElementById('ryInput');
+      const angleDegInput = document.getElementById('angleDeg');
+      const curveAxisSelect = document.getElementById('curveAxis');
+      const applyShapeBtn = document.getElementById('applyShapeBtn');
+      const updateCurveBtn = document.getElementById('updateCurveBtn');
+
+      function updateShapeInputsVisibility() {
+        const shape = shapeSelect.value;
+        const showSphere = shape === 'sphere';
+        const showCyl = shape === 'cylX' || shape === 'cylY';
+        const showSpherocyl = shape === 'spherocyl';
+        sphereRInput.style.display = showSphere ? '' : 'none';
+        document.querySelector("label[for='sphereR']").style.display = showSphere ? '' : 'none';
+        cylRInput.style.display = showCyl ? '' : 'none';
+        document.querySelector("label[for='cylR']").style.display = showCyl ? '' : 'none';
+        rxInput.style.display = showSpherocyl ? '' : 'none';
+        ryInput.style.display = showSpherocyl ? '' : 'none';
+        document.querySelector("label[for='rxInput']").style.display = showSpherocyl ? '' : 'none';
+        document.querySelector("label[for='ryInput']").style.display = showSpherocyl ? '' : 'none';
+        angleDegInput.style.display = showSpherocyl ? '' : 'none';
+        document.querySelector("label[for='angleDeg']").style.display = showSpherocyl ? '' : 'none';
+      }
+      if (shapeSelect) {
+        shapeSelect.addEventListener('change', updateShapeInputsVisibility);
+        updateShapeInputsVisibility();
+      }
+      if (applyShapeBtn) applyShapeBtn.addEventListener('click', () => { applyShapeToCloth(); updateCurveVisuals(); });
+      if (updateCurveBtn) updateCurveBtn.addEventListener('click', updateCurveVisuals);
+      if (curveAxisSelect) curveAxisSelect.addEventListener('change', updateCurveVisuals);
+      if (curveChk) curveChk.addEventListener('change', updateCurveVisuals);
+      if (wireframeChk) wireframeChk.addEventListener('change', () => { clothMat.wireframe = !!wireframeChk.checked; });
+      // Auto preview on input
+      const autoInputs = [shapeSelect, unitsSelect, concaveChk, sphereRInput, cylRInput, rxInput, ryInput, angleDegInput];
+      autoInputs.forEach(el => { if (!el) return; el.addEventListener('input', () => { if (autoPreviewChk?.checked) updateCurveVisuals(); }); });
+      if (autoPreviewChk) autoPreviewChk.addEventListener('change', () => { if (autoPreviewChk.checked) updateCurveVisuals(); });
+      // Initial curve draw and apply default shape as stationary baseline
+      updateCurveVisuals();
+      // Default to Freeze being on for stationary baseline
+      if (freezeChk) freezeChk.checked = true;
+      // Apply current UI-selected shape as rest shape on startup
+      applyShapeToCloth();
+
+      // Kick off animation
+      requestAnimationFrame(step);
+      drawLegend();
+
+      // Resize handling
+      window.addEventListener('resize', () => {
+        const w = window.innerWidth, hPx = window.innerHeight;
+        renderer.setSize(w, hPx);
+        camera.aspect = w / hPx;
+        camera.updateProjectionMatrix();
+        drawLegend();
+      });
+    </script>
+  </body>
+</html>

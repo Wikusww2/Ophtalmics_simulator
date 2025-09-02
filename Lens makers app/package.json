@@ -1,0 +1,19 @@
+{
+  "name": "ophthalmic-lens-lab",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "test": "vitest"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "vitest": "^3.2.4"
+  }
+}

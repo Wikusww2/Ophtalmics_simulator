@@ -1,0 +1,6 @@
+[
+  { "name": "Demo Rect", "A": 52, "B": 36, "DBL": 18, "shape": "rectangle", "shapeParams": { "cornerRadius": 3 } },
+  { "name": "Round 48", "A": 48, "B": 48, "DBL": 20, "shape": "round", "shapeParams": {} },
+  { "name": "Oval 54x38", "A": 54, "B": 38, "DBL": 18, "shape": "oval", "shapeParams": {} }
+]
+

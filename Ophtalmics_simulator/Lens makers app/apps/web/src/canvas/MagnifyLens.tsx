@@ -76,7 +76,7 @@ export function MagnifyLens({ geometry, radiusUnits, sphereD, cylinderD, axisDeg
     ;(mat.uniforms as any).sphD.value = sphereD
     ;(mat.uniforms as any).cylD.value = cylinderD
     ;(mat.uniforms as any).axisRad.value = (axisDeg * Math.PI) / 180
-    // Use positive pxPerD; shader has negative sign in offset computation
+    // Use pxPerD scaling factor for refraction offset
     const dpr = gl.getPixelRatio()
     ;(mat.uniforms as any).pxPerD.value = (sphereD === 0 && cylinderD === 0) ? 0.0 : (0.14 * dpr)
     ;(mat.uniforms as any).blurMaxPx.value = 2.0 * dpr

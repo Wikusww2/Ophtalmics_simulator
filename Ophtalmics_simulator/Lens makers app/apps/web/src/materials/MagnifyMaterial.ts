@@ -24,7 +24,7 @@ export function makeMagnifyMaterial() {
     cylD: { value: 0 },
     axisRad: { value: 0 },
     pxPerD: { value: 0.25 }, // pixels of edge shift per diopter (adjusted in host)
-    opacity: { value: 0.92 },
+    opacity: { value: 1.0 },
     edgeFeather: { value: 0.02 },
     minusEdgeStrength: { value: 0.0 },
     minusEdgeMax: { value: 0.0 },

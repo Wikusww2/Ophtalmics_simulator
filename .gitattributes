@@ -1,0 +1,21 @@
+# Normalize text files, prefer LF in repo, auto-convert on checkout
+* text=auto eol=lf
+
+# Binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+
+# Keep these as text explicitly
+*.ts text
+*.tsx text
+*.js text
+*.jsx text
+*.json text
+*.css text
+*.scss text
+*.md text
+*.yaml text
+*.yml text

@@ -24,7 +24,7 @@ export function makeMagnifyMaterial() {
     cylD: { value: 0 },
     axisRad: { value: 0 },
     pxPerD: { value: 0.25 }, // pixels of edge shift per diopter (adjusted in host)
-    opacity: { value: 0.92 },
+    opacity: { value: 1.0 },
     edgeFeather: { value: 0.02 },
     minusEdgeStrength: { value: 0.0 },
     minusEdgeMax: { value: 0.0 },
@@ -46,7 +46,6 @@ export function makeMagnifyMaterial() {
     `,
     fragmentShader: `
       precision highp float;
-      #include <colorspace_pars_fragment>
       uniform sampler2D tBackground;
       uniform vec2 resolution;
       uniform float radiusUnits; // lens radius in world units
@@ -55,12 +54,6 @@ export function makeMagnifyMaterial() {
       varying vec2 vXY;
 
       float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
-      vec3 encodeSRGB(vec3 c){
-        vec3 lo = c * 12.92;
-        vec3 hi = 1.055 * pow(c, vec3(1.0/2.4)) - 0.055;
-        vec3 isHi = step(vec3(0.0031308), c);
-        return mix(lo, hi, isHi);
-      }
 
       void main(){
         vec2 uv = gl_FragCoord.xy / resolution;
@@ -72,7 +65,7 @@ export function makeMagnifyMaterial() {
         vec2 dirPower = vec2(-dirAxis.y, dirAxis.x); // perpendicular to axis
         float projP = dot(q, dirPower);
         // Refraction offset in pixel units: inward for plus, outward for minus
-        vec2 offsetPx = (-pxPerD * sphD) * q + (-pxPerD * cylD) * projP * dirPower;
+        vec2 offsetPx = -pxPerD * (sphD * q + cylD * projP * dirPower);
         // Convert px -> uv
         vec2 offsetUV = offsetPx / resolution;
         vec2 sampUV = clamp(uv + offsetUV, vec2(0.0), vec2(1.0));
@@ -112,7 +105,7 @@ export function makeMagnifyMaterial() {
 
         // Robust edge feather: alpha = 1 inside, fades to 0 near rim
         float a = opacity * smoothstep(1.0 - edgeFeather, 1.0, 1.0 - r);
-        gl_FragColor = vec4(encodeSRGB(col), a);
+        gl_FragColor = vec4(col, a);
       }
     `,
   })

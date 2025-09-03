@@ -1,16 +1,17 @@
 import { useMemo, useEffect, useRef } from 'react'
+import { useThree } from '@react-three/fiber'
 import { useLensState } from '../state/lensState'
 import { buildLensGeometry } from '../geometry/LensBuilder'
-import { TransformControls, CubeCamera } from '@react-three/drei'
+import { TransformControls, CubeCamera, Line } from '@react-three/drei'
 import { useSceneState } from '../state/sceneState'
 import * as THREE from 'three'
-import { Line } from '@react-three/drei'
 import { RoomEnv } from './RoomEnv'
 import { MagnifyLens } from './MagnifyLens'
 import { makeCoatedGlassMaterial } from '../materials'
 
 export function LensScene() {
   const design = useLensState((s) => s.design)
+  const { scene: r3fScene } = useThree()
   const geom = useMemo(() => buildLensGeometry(design), [design])
   const envStyle = design.envStyle
   const objects = useSceneState((s) => s.objects)
@@ -30,6 +31,8 @@ export function LensScene() {
   const radiusUnits = useMemo(() => (Math.max(design.clearAperture, design.diameter) * 0.5) * 0.001, [design])
   const glassMat = useMemo(() => makeCoatedGlassMaterial(design.material, design.centerThickness, design.coatingFront), [design])
   const glassRef = useRef<THREE.Mesh>(null)
+  // Clinical deadband: treat as plano when both |sphere| and |cylinder| ≤ 0.25 D
+  const plano = Math.abs(design.spherePower) <= 0.25 && Math.abs(design.cylinderPower) <= 0.25
 
   // Optional thickness map for transmission based on actual geometry (mm -> meters)
   useMemo(() => {
@@ -56,9 +59,13 @@ export function LensScene() {
       {/* Base physical glass for subtle reflections/highlights with dynamic env */}
       <CubeCamera frames={1} resolution={256}>
         {(texture) => {
-          try { (glassMat as any).envMap = texture; (glassMat as any).needsUpdate = true } catch {}
+          try {
+            (glassMat as any).envMap = texture
+            ;(glassMat as any).needsUpdate = true
+            ;(r3fScene as any).environment = texture
+          } catch {}
           return (
-            <mesh ref={glassRef} geometry={geom} material={glassMat as any} renderOrder={5} />
+            <mesh ref={glassRef} geometry={geom} material={glassMat as any} renderOrder={10} />
           )
         }}
       </CubeCamera>
@@ -66,8 +73,8 @@ export function LensScene() {
       <MagnifyLens
         geometry={geom}
         radiusUnits={radiusUnits}
-        sphereD={design.spherePower}
-        cylinderD={design.cylinderPower}
+        sphereD={plano ? 0 : design.spherePower}
+        cylinderD={plano ? 0 : design.cylinderPower}
         axisDeg={design.axisDeg}
         hideRefs={[glassRef]}
       />

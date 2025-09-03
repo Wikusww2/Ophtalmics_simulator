@@ -84,7 +84,7 @@ export function makeMagnifyMaterial() {
         }
 
         // Darken only when spherical equivalent is minus and displacement is strictly outward (minification)
-        float outward = (dot(offsetPx, q) > 1e-6) ? 1.0 : 0.0; // displacement strictly away from center
+        float outward = (dot(offsetPx, q) > 1e-6) ? 1.0 : 0.0; // exclude near-zero so +D never darkens
         float se = sphD + 0.5 * cylD; // spherical equivalent
         float hasMinus = (se < 0.0) ? 1.0 : 0.0;
         if (hasMinus > 0.5 && outward > 0.5) {

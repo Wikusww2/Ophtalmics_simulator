@@ -8,8 +8,10 @@ import { Line } from '@react-three/drei'
 import { RoomEnv } from './RoomEnv'
 import { MagnifyLens } from './MagnifyLens'
 import { makeCoatedGlassMaterial } from '../materials'
+import { useThree } from '@react-three/fiber'
 
 export function LensScene() {
+  const { scene: r3fScene } = useThree()
   const design = useLensState((s) => s.design)
   const geom = useMemo(() => buildLensGeometry(design), [design])
   const envStyle = design.envStyle
@@ -28,37 +30,66 @@ export function LensScene() {
 
   // Lens radius in world units for magnify shader (mm -> units)
   const radiusUnits = useMemo(() => (Math.max(design.clearAperture, design.diameter) * 0.5) * 0.001, [design])
+  // Clinical deadband: treat as plano when both |sphere| and |cylinder| ≤ 0.25 D
+  const plano = Math.abs(design.spherePower) <= 0.25 && Math.abs(design.cylinderPower) <= 0.25
   const glassMat = useMemo(() => makeCoatedGlassMaterial(design.material, design.centerThickness, design.coatingFront), [design])
   const glassRef = useRef<THREE.Mesh>(null)
 
-  // Optional thickness map for transmission based on actual geometry (mm -> meters)
-  useMemo(() => {
+  // Thickness map generation (mm grid -> DataTexture) and max thickness in meters
+  const thicknessInfo = useMemo(() => {
     const ud: any = (geom as any)?.userData
-    if (!ud || !ud.gridW || !ud.gridH || !ud.thick) return
-    const w = ud.gridW as number
-    const h = ud.gridH as number
-    const data = ud.thick as Float32Array
+    if (!ud || !ud.gridW || !ud.gridH || !ud.thick) return undefined
+    const w = ud.gridW as number, h = ud.gridH as number
+    const tmm = ud.thick as Float32Array
     let maxT = -Infinity, minT = Infinity
-    for (let i = 0; i < data.length; i++) { const v = data[i]; if (v>maxT) maxT=v; if (v<minT) minT=v }
-    const span = Math.max(1e-9, maxT - minT)
+    for (let i = 0; i < tmm.length; i++) { const v = tmm[i]; if (v > maxT) maxT = v; if (v < minT) minT = v }
+    const span = Math.max(1e-6, maxT - minT)
     const arr = new Uint8Array(w * h)
-    for (let i = 0; i < data.length; i++) arr[i] = Math.max(0, Math.min(255, Math.round(255 * ((data[i]-minT)/span))))
+    for (let i = 0; i < tmm.length; i++) { arr[i] = Math.round(255 * (tmm[i] - minT) / span) }
     const tex = new THREE.DataTexture(arr, w, h, THREE.RedFormat)
     tex.needsUpdate = true
     tex.magFilter = THREE.LinearFilter
     tex.minFilter = THREE.LinearFilter
-    ;(glassMat as any).thickness = ((maxT + minT) * 0.5) * 0.001
-    ;(glassMat as any).thicknessMap = span > 1e-4 ? tex : null
-  }, [geom, glassMat])
+    return { tex, maxT_m: maxT * 0.001 }
+  }, [geom])
+
+  // Apply physical glass params and thickness logic based on plano deadband
+  useEffect(() => {
+    const mat: any = glassMat
+    if (!mat) return
+    // scientific material params
+    mat.metalness = 0
+    mat.roughness = 0.02
+    mat.transmission = 1
+    mat.ior = design.material.nd
+    mat.side = THREE.DoubleSide
+    mat.depthWrite = false
+    mat.attenuationColor = new THREE.Color('#ffffff')
+    mat.attenuationDistance = 1000
+    // thickness application
+    if (plano) {
+      mat.thickness = 0
+      mat.thicknessMap = null
+    } else {
+      mat.thickness = thicknessInfo?.maxT_m ?? (design.centerThickness * 0.001)
+      mat.thicknessMap = thicknessInfo?.tex ?? null
+    }
+    mat.needsUpdate = true
+  }, [glassMat, thicknessInfo, plano, design.material.nd, design.centerThickness])
 
   return (
     <group>
       {/* Base physical glass for subtle reflections/highlights with dynamic env */}
       <CubeCamera frames={1} resolution={256}>
         {(texture) => {
-          try { (glassMat as any).envMap = texture; (glassMat as any).needsUpdate = true } catch {}
+          try {
+            (glassMat as any).envMap = texture
+            ;(glassMat as any).needsUpdate = true
+            // Also feed the scene environment so IBL/specular uses this cube map
+            ;(r3fScene as any).environment = texture
+          } catch {}
           return (
-            <mesh ref={glassRef} geometry={geom} material={glassMat as any} renderOrder={5} />
+            <mesh ref={glassRef} geometry={geom} material={glassMat as any} renderOrder={10} />
           )
         }}
       </CubeCamera>
@@ -66,8 +97,8 @@ export function LensScene() {
       <MagnifyLens
         geometry={geom}
         radiusUnits={radiusUnits}
-        sphereD={design.spherePower}
-        cylinderD={design.cylinderPower}
+        sphereD={plano ? 0 : design.spherePower}
+        cylinderD={plano ? 0 : design.cylinderPower}
         axisDeg={design.axisDeg}
         hideRefs={[glassRef]}
       />

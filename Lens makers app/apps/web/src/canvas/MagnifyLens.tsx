@@ -74,6 +74,10 @@ export function MagnifyLens({ geometry, radiusUnits, sphereD, cylinderD, axisDeg
     // Use positive pxPerD; shader has negative sign in offset computation
     const dpr = gl.getPixelRatio()
     ;(mat.uniforms as any).pxPerD.value = (sphereD === 0 && cylinderD === 0) ? 0.0 : (0.14 * dpr)
+<<<<<<< HEAD
+=======
+    ;(mat.uniforms as any).blurMaxPx.value = 2.0 * dpr
+>>>>>>> c83f44d (chore: sync local changes (MagnifyLens/Scene/MagnifyMaterial) and add Ophtalmics_simulator dir)
     // Full opacity when powered to preserve colors; zero when plano
     ;(mat.uniforms as any).opacity.value = (sphereD === 0 && cylinderD === 0) ? 0.0 : 1.0
     // Minus-only grid-line darkening tuning (consider sphere and cylinder minification)

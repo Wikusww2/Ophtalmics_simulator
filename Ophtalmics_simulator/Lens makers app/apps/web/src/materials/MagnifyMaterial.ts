@@ -64,6 +64,7 @@ export function makeMagnifyMaterial() {
         vec2 dirAxis = vec2(cos(axisRad), sin(axisRad));
         vec2 dirPower = vec2(-dirAxis.y, dirAxis.x); // perpendicular to axis
         float projP = dot(q, dirPower);
+        codex/clean-up-duplicate-workspace-and-align-rendering-ff2g97
         // Refraction offset in pixel units: inward for plus, outward for minus
         // Negative sign matches clinical convention so +D magnifies (inward) and −D minifies (outward)
         vec2 offsetPx = -pxPerD * (sphD * q + cylD * projP * dirPower);
@@ -84,6 +85,7 @@ export function makeMagnifyMaterial() {
         }
 
         // Darken only when spherical equivalent is minus and displacement is strictly outward (minification)
+        codex/clean-up-duplicate-workspace-and-align-rendering-ff2g97
         float outward = (dot(offsetPx, q) > 1e-6) ? 1.0 : 0.0; // exclude near-zero so +D never darkens
         float se = sphD + 0.5 * cylD; // spherical equivalent
         float hasMinus = (se < 0.0) ? 1.0 : 0.0;

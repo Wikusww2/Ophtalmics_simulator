@@ -1,0 +1,23 @@
+﻿# Node / build
+node_modules/
+.pnpm-store/
+**/dist/
+**/build/
+**/.cache/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Env
+.env
+.env.local
+

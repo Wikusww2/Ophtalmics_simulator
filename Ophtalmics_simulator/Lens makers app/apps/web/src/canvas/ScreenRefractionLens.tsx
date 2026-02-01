@@ -7,8 +7,8 @@ import { makeScreenRefractionMaterial } from '../materials/ScreenRefractionMater
 export function ScreenRefractionLens({ geometry, ior, thickness }: { geometry: THREE.BufferGeometry, ior: number, thickness: number }) {
   const mat = useMemo(() => makeScreenRefractionMaterial(ior, thickness), [ior, thickness])
   const meshRef = useRef<THREE.Mesh>(null)
-  const { gl, scene, camera, size } = useThree()
-  const rt = useFBO({ samples: 4, stencilBuffer: false, depthBuffer: true, multisample: true, width: size.width, height: size.height })
+  const { gl, scene, camera } = useThree()
+  const rt = useFBO({ samples: 4, stencilBuffer: false, depthBuffer: true })
 
   useFrame(() => {
     const mesh = meshRef.current

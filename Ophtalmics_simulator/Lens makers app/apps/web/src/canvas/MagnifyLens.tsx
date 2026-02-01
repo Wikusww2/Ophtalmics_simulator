@@ -10,6 +10,11 @@ export function MagnifyLens({ geometry, radiusUnits, sphereD, cylinderD, axisDeg
   const { gl, scene, camera, size } = useThree()
   // Lower MSAA and rely on moderate supersampling for crispness at lower cost
   const rt = useFBO({ samples: 2, stencilBuffer: false, depthBuffer: true })
+  // Ensure linear background capture and stable sampling
+  rt.texture.colorSpace = THREE.NoColorSpace
+  rt.texture.generateMipmaps = false
+  rt.texture.minFilter = THREE.LinearFilter
+  rt.texture.magFilter = THREE.LinearFilter
   // Track when we actually need to refresh the background capture
   const prevCamMat = useRef<Float32Array>(new Float32Array(16))
   const dirty = useRef<boolean>(true)
@@ -29,7 +34,7 @@ export function MagnifyLens({ geometry, radiusUnits, sphereD, cylinderD, axisDeg
   // Mark overlay capture dirty when optical parameters or geometry change
   useEffect(() => { dirty.current = true }, [sphereD, cylinderD, axisDeg, radiusUnits, geometry])
 
-  useFrame((state) => {
+  useFrame((state: any) => {
     const mesh = meshRef.current
     if (!mesh) return
     // Decide if we need to refresh the background capture
@@ -71,15 +76,22 @@ export function MagnifyLens({ geometry, radiusUnits, sphereD, cylinderD, axisDeg
     ;(mat.uniforms as any).sphD.value = sphereD
     ;(mat.uniforms as any).cylD.value = cylinderD
     ;(mat.uniforms as any).axisRad.value = (axisDeg * Math.PI) / 180
-    // Use positive pxPerD; shader has negative sign in offset computation
+    // Use pxPerD scaling factor for refraction offset
     const dpr = gl.getPixelRatio()
     ;(mat.uniforms as any).pxPerD.value = (sphereD === 0 && cylinderD === 0) ? 0.0 : (0.14 * dpr)
+    ;(mat.uniforms as any).blurMaxPx.value = 2.0 * dpr
     // Full opacity when powered to preserve colors; zero when plano
     ;(mat.uniforms as any).opacity.value = (sphereD === 0 && cylinderD === 0) ? 0.0 : 1.0
     // Minus-only grid-line darkening tuning (consider sphere and cylinder minification)
     const minusMag = Math.max(0, -sphereD) + Math.max(0, -cylinderD)
     ;(mat.uniforms as any).minusEdgeStrength.value = 1.2 + Math.min(1.0, minusMag / 4.0) * 1.0
     ;(mat.uniforms as any).minusEdgeMax.value = 0.18 + Math.min(1.0, minusMag / 6.0) * 0.08
+    // Hard-disable any darkening when spherical equivalent is non-minus
+    const se = sphereD + 0.5 * cylinderD
+    if (se >= 0) {
+      ;(mat.uniforms as any).minusEdgeStrength.value = 0.0
+      ;(mat.uniforms as any).minusEdgeMax.value = 0.0
+    }
   })
 
   // Draw before the physical glass so specular highlights remain on top
